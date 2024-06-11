@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>EyeCam</title>
+    <link rel="stylesheet" href="index.css" />
+</head>
+<body style="-webkit-app-region: drag;">
+    <div class="controls">
+        <p>Choufouni Apps</p>
+        <select id="select"></select>
+        <button id="button">Start WebCam</button>
+        <p>Circle Size</p>
+        <input type="range" id="sizeSlider" min="100" max="500" value="200" />
+        <!-- Demo circle -->
+        <div id="demo" style="width: 200px; height: 200px; border-radius: 50%; background: #009ea3; margin: 0 auto;"></div>
+    </div>
+    <div id="crop" class="hide">
+        <video id="video" autoplay="" playsinline=""></video>
+    </div>
+</body>
+<style>
+    html {
+        width: 100%;
+        height: 100%;
+    }
+    button, select, input {
+        -webkit-app-region: no-drag;
+    }
+    p {
+        padding-top: 10px;
+        margin: 0;
+    }
+    .controls {
+        text-align: center;
+        width: 100%;
+        height: auto;
+        background: #f2f2f2;
+        margin: 15px auto;
+    }
+    .hide {
+        display: none;
+    }
+    #select, #sizeSlider {
+        display: block;
+        margin: 10px auto;
+        width: 100%;
+    }
+    #crop {
+        border-radius: 50%;
+        overflow: hidden;
+        width: 200px;
+        height: 200px;
+        margin: 0 auto;
+    }
+    #video {
+        position: relative;
+        height: 100% !important;
+        width: auto !important;
+        left: 50%;
+        transform: translate3d(-50%, 0, 0);
+    }
+</style>
+<script>
+    const { ipcRenderer } = require('electron');
+    const video = document.getElementById("video");
+    const button = document.getElementById("button");
+    const select = document.getElementById("select");
+    const crop = document.getElementById("crop");
+    const sizeSlider = document.getElementById("sizeSlider");
+    const demo = document.getElementById("demo");
+    const controls = document.querySelector(".controls");
+
+    let currentStream;
+
+    function stopMediaTracks(stream) {
+        stream.getTracks().forEach((track) => {
+            track.stop();
+        });
+    }
+
+    function gotDevices(mediaDevices) {
+        select.innerHTML = "";
+        select.appendChild(document.createElement("option"));
+        let count = 1;
+        mediaDevices.forEach((mediaDevice) => {
+            if (mediaDevice.kind === "videoinput") {
+                const option = document.createElement("option");
+                option.value = mediaDevice.deviceId;
+                const label = mediaDevice.label || `Camera ${count++}`;
+                const textNode = document.createTextNode(label);
+                option.appendChild(textNode);
+                select.appendChild(option);
+            }
+        });
+    }
+
+    button.addEventListener("click", (event) => {
+        if (typeof currentStream !== "undefined") {
+            stopMediaTracks(currentStream);
+        }
+        const videoConstraints = {};
+        if (select.value === "") {
+            videoConstraints.facingMode = "environment";
+        } else {
+            videoConstraints.deviceId = { exact: select.value };
+        }
+        const constraints = {
+            video: videoConstraints,
+            audio: false,
+        };
+        navigator.mediaDevices
+            .getUserMedia(constraints)
+            .then((stream) => {
+                currentStream = stream;
+                video.srcObject = stream;
+
+                controls.classList.add("hide");
+                crop.classList.remove("hide");
+
+                // Send the new size to the main process when starting the webcam
+                const sizeValue = parseInt(sizeSlider.value, 10);
+                ipcRenderer.send("change-size", sizeValue);
+
+                return navigator.mediaDevices.enumerateDevices();
+            })
+            .then(gotDevices)
+            .catch((error) => {
+                console.error(error);
+            });
+    });
+
+    sizeSlider.addEventListener("input", (event) => {
+        const size = event.target.value + "px";
+        crop.style.width = size;
+        crop.style.height = size;
+        demo.style.width = size;
+        demo.style.height = size;
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.ctrlKey && event.key === "q") {
+            event.preventDefault();
+            controls.classList.remove("hide");
+            crop.classList.add("hide");
+            if (currentStream) {
+                stopMediaTracks(currentStream);
+            }
+			// Send the new size to the main process when starting the webcam
+            ipcRenderer.send("change-size", 700);
+        }
+    });
+
+    navigator.mediaDevices.enumerateDevices().then(gotDevices);
+</script>
+</html>
